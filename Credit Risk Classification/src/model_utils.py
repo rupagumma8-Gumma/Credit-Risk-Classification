@@ -104,6 +104,42 @@ def train_model(df: pd.DataFrame) -> dict:
 
 # ── Loading ─────────────────────────────────────────────────────────────────
 
+
+def _rebuild_model_artifacts() -> None:
+    """Rebuild saved artifacts if they are missing or incompatible."""
+    from src.preprocessing import clean_dataset, download_dataset, load_dataset
+
+    download_dataset()
+    df = load_dataset()
+    if df is None or df.empty:
+        raise ValueError("Dataset could not be loaded for model rebuild.")
+    df = clean_dataset(df)
+    train_model(df)
+
+
+def _load_with_fallback(path: str, artifact_name: str, rebuild: bool = True):
+    """Load a joblib artifact and rebuild it if the saved version is stale."""
+    if not os.path.exists(path):
+        if rebuild:
+            _rebuild_model_artifacts()
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"{artifact_name} not found at {path}. Run train_model.py first.")
+
+    try:
+        return joblib.load(path)
+    except Exception as exc:
+        if not rebuild:
+            raise
+        try:
+            _rebuild_model_artifacts()
+            return joblib.load(path)
+        except Exception as rebuild_exc:
+            raise RuntimeError(
+                f"{artifact_name} could not be loaded or rebuilt. "
+                f"Delete the stale artifact at {path} and rerun train_model.py."
+            ) from rebuild_exc
+
+
 def load_model():
     """Load the trained model from disk.
 
@@ -113,11 +149,7 @@ def load_model():
     Raises:
         FileNotFoundError: If the model artifact is missing.
     """
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(
-            f"Model not found at {MODEL_PATH}. Run train_model.py first."
-        )
-    return joblib.load(MODEL_PATH)
+    return _load_with_fallback(MODEL_PATH, "Model")
 
 
 def load_preprocessor():
@@ -129,11 +161,7 @@ def load_preprocessor():
     Raises:
         FileNotFoundError: If the preprocessor artifact is missing.
     """
-    if not os.path.exists(PREPROCESSOR_PATH):
-        raise FileNotFoundError(
-            f"Preprocessor not found at {PREPROCESSOR_PATH}. Run train_model.py first."
-        )
-    return joblib.load(PREPROCESSOR_PATH)
+    return _load_with_fallback(PREPROCESSOR_PATH, "Preprocessor")
 
 
 def load_metrics() -> dict:
@@ -145,11 +173,7 @@ def load_metrics() -> dict:
     Raises:
         FileNotFoundError: If the metrics artifact is missing.
     """
-    if not os.path.exists(METRICS_PATH):
-        raise FileNotFoundError(
-            f"Metrics not found at {METRICS_PATH}. Run train_model.py first."
-        )
-    return joblib.load(METRICS_PATH)
+    return _load_with_fallback(METRICS_PATH, "Metrics")
 
 
 # ── Prediction ──────────────────────────────────────────────────────────────

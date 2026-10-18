@@ -175,13 +175,11 @@ def _save_prediction_history(browser_id, input_data, result):
 
 
 def _get_browser_prediction_history():
-    """Load saved predictions, newest first.
-
-    History is intentionally available from the shared history database even
-    when the browser identifier cookie is missing or was cleared. This keeps
-    records visible on the History page after browser data resets.
-    """
+    """Load saved predictions for the current browser only."""
     browser_id = request.cookies.get("prediction_history_id")
+    if not browser_id:
+        return []
+
     database_path = app.config["HISTORY_DATABASE"]
     if not os.path.exists(database_path):
         return []
@@ -189,24 +187,15 @@ def _get_browser_prediction_history():
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     try:
-        if browser_id:
-            rows = connection.execute(
-                """
-                SELECT id, created_at, input_data, result
-                FROM prediction_history
-                WHERE browser_id = ?
-                ORDER BY id DESC
-                """,
-                (browser_id,),
-            ).fetchall()
-        else:
-            rows = connection.execute(
-                """
-                SELECT id, created_at, input_data, result
-                FROM prediction_history
-                ORDER BY id DESC
-                """
-            ).fetchall()
+        rows = connection.execute(
+            """
+            SELECT id, created_at, input_data, result
+            FROM prediction_history
+            WHERE browser_id = ?
+            ORDER BY id DESC
+            """,
+            (browser_id,),
+        ).fetchall()
     finally:
         connection.close()
 
@@ -326,8 +315,11 @@ def history():
 
 @app.route("/history/<int:prediction_id>")
 def history_detail(prediction_id):
-    """Display a saved prediction from the history database."""
+    """Display a saved prediction from the current browser's history."""
     browser_id = request.cookies.get("prediction_history_id")
+    if not browser_id:
+        return render_template("404.html"), 404
+
     database_path = app.config["HISTORY_DATABASE"]
     if not os.path.exists(database_path):
         return render_template("404.html"), 404
@@ -335,24 +327,14 @@ def history_detail(prediction_id):
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     try:
-        if browser_id:
-            prediction = connection.execute(
-                """
-                SELECT input_data, result
-                FROM prediction_history
-                WHERE id = ? AND browser_id = ?
-                """,
-                (prediction_id, browser_id),
-            ).fetchone()
-        else:
-            prediction = connection.execute(
-                """
-                SELECT input_data, result
-                FROM prediction_history
-                WHERE id = ?
-                """,
-                (prediction_id,),
-            ).fetchone()
+        prediction = connection.execute(
+            """
+            SELECT input_data, result
+            FROM prediction_history
+            WHERE id = ? AND browser_id = ?
+            """,
+            (prediction_id, browser_id),
+        ).fetchone()
     finally:
         connection.close()
 
